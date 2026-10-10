@@ -3,6 +3,16 @@ import { notFound } from "next/navigation"
 
 import { Chat } from "@/components/chat"
 import { ChatHeader } from "@/components/chat-header"
+import {
+  DesktopPanel,
+  DesktopPanelProvider,
+} from "@/components/desktop-panel"
+import { DesktopView } from "@/components/desktop-view"
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable"
 import { getChat } from "@/queries/chat"
 
 export default async function Page({
@@ -23,9 +33,22 @@ export default async function Page({
   const bot = chat.members[0]?.bot
 
   return (
-    <div className="flex h-svh flex-col">
-      <ChatHeader name={chat.name ?? bot?.name ?? "Chat"} bot={bot} />
-      <Chat key={chat.id} chatId={chat.id} />
-    </div>
+    <DesktopPanelProvider>
+      <ResizablePanelGroup orientation="horizontal" className="h-svh">
+        <ResizablePanel id="chat" minSize="30%">
+          <div className="flex h-full flex-col">
+            <ChatHeader name={chat.name ?? bot?.name ?? "Chat"} bot={bot} />
+            <Chat key={chat.id} chatId={chat.id} />
+          </div>
+        </ResizablePanel>
+        {/* toggled by the desktop button in the chat header */}
+        <DesktopPanel>
+          <ResizableHandle />
+          <ResizablePanel id="desktop" defaultSize="40%" minSize="20%">
+            <DesktopView chatId={chat.id} />
+          </ResizablePanel>
+        </DesktopPanel>
+      </ResizablePanelGroup>
+    </DesktopPanelProvider>
   )
 }

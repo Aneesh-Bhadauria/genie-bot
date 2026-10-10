@@ -33,3 +33,28 @@ export async function getChat(chatId: string) {
     },
   })
 }
+
+// The sandbox of one of the signed-in user's chats, or null when the chat is
+// not theirs or its bot has none. Group chats fall back to their first bot.
+export async function getChatSandboxId(chatId: string) {
+  const { isAuthenticated, userId } = await auth()
+
+  if (!isAuthenticated) {
+    throw new Error("You must be signed in to open a chat.")
+  }
+
+  const chat = await db.query.chats.findFirst({
+    where: and(eq(chats.id, chatId), eq(chats.userId, userId)),
+    columns: { id: true },
+    with: {
+      members: {
+        orderBy: asc(chatMembers.joinedAt),
+        limit: 1,
+        columns: { botId: true },
+        with: { bot: { columns: { sandboxId: true } } },
+      },
+    },
+  })
+
+  return chat?.members[0]?.bot.sandboxId ?? null
+}

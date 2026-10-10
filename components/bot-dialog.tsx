@@ -2,12 +2,24 @@
 
 import { useState } from "react"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { PlusIcon, ShuffleIcon } from "lucide-react"
+import { PlusIcon, ShuffleIcon, Trash2Icon } from "lucide-react"
 import { nanoid } from "nanoid"
+import { useRouter } from "next/navigation"
 import { Controller, useForm } from "react-hook-form"
 
-import { createBot, updateBot } from "@/actions/bot"
+import { createBot, deleteBot, updateBot } from "@/actions/bot"
 import { ChatAvatar } from "@/components/chat-avatar"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -211,6 +223,7 @@ function BotForm({ bot, onSaved }: { bot?: EditableBot; onSaved: () => void }) {
         />
       </FieldGroup>
       <DialogFooter>
+        {bot && <DeleteBotButton bot={bot} />}
         <DialogClose render={<Button type="button" variant="outline" />}>
           Cancel
         </DialogClose>
@@ -220,6 +233,68 @@ function BotForm({ bot, onSaved }: { bot?: EditableBot; onSaved: () => void }) {
         </Button>
       </DialogFooter>
     </form>
+  )
+}
+
+function DeleteBotButton({ bot }: { bot: EditableBot }) {
+  const router = useRouter()
+  const [open, setOpen] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+
+  async function onDelete() {
+    setIsDeleting(true)
+
+    try {
+      await deleteBot(bot.id)
+      toast.add({
+        type: "success",
+        title: "Bot deleted",
+        description: `${bot.name} and its chat are gone.`,
+      })
+      // the chat this was opened from no longer exists
+      router.push("/")
+    } catch {
+      toast.add({
+        type: "error",
+        title: "Could not delete the bot",
+        description: "Something went wrong. Please try again.",
+      })
+      setIsDeleting(false)
+    }
+  }
+
+  return (
+    <AlertDialog open={open} onOpenChange={setOpen}>
+      <AlertDialogTrigger
+        render={
+          <Button type="button" variant="destructive" className="sm:mr-auto" />
+        }
+      >
+        <Trash2Icon data-icon="inline-start" />
+        Delete bot
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete {bot.name}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This permanently deletes the bot, its chat and its sandbox. It
+            cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            type="button"
+            variant="destructive"
+            disabled={isDeleting}
+            onClick={onDelete}
+          >
+            {isDeleting && <Spinner data-icon="inline-start" />}
+            Delete bot
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   )
 }
 

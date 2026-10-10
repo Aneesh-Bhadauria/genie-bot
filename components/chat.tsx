@@ -6,7 +6,7 @@ import {
   useLoadTranscript,
   useTriggerChatTransport,
 } from "@trigger.dev/sdk/chat/react"
-import type { ChatTransport, UIMessage } from "ai"
+import type { ChatTransport } from "ai"
 
 import {
   loadTranscript,
@@ -14,11 +14,13 @@ import {
   startChatSession,
 } from "@/actions/chat"
 
+import { CodeBlock } from "@/components/ai-elements/code-block"
 import {
   Conversation,
   ConversationContent,
   ConversationScrollButton,
 } from "@/components/ai-elements/conversation"
+import { Image } from "@/components/ai-elements/image"
 import {
   Message,
   MessageContent,
@@ -31,8 +33,115 @@ import {
   PromptInputTextarea,
   type PromptInputMessage,
 } from "@/components/ai-elements/prompt-input"
+import {
+  Tool,
+  ToolContent,
+  ToolHeader,
+  ToolInput,
+  ToolOutput,
+} from "@/components/ai-elements/tool"
 import { Spinner } from "@/components/ui/spinner"
 import type { chatAgent } from "@/trigger/chat"
+import type { ChatUIMessage } from "@/trigger/tools"
+
+type ChatToolPart = Extract<
+  ChatUIMessage["parts"][number],
+  { type: `tool-${string}` }
+>
+
+// what the tool is doing, in place of its raw name
+function getToolTitle(part: ChatToolPart) {
+  switch (part.type) {
+    case "tool-bash":
+      return part.input?.command ?? "Run command"
+    case "tool-readFile":
+      return `Read ${part.input?.path ?? "file"}`
+    case "tool-writeFile":
+      return `Write ${part.input?.path ?? "file"}`
+    case "tool-listFiles":
+      return `List ${part.input?.path ?? "files"}`
+    case "tool-mouseClick":
+      return `${part.input?.double ? "Double-click" : "Click"} at ${part.input?.x ?? "…"}, ${part.input?.y ?? "…"}`
+    case "tool-mouseMove":
+      return `Move mouse to ${part.input?.x ?? "…"}, ${part.input?.y ?? "…"}`
+    case "tool-mouseDrag":
+      return `Drag from ${part.input?.startX ?? "…"}, ${part.input?.startY ?? "…"} to ${part.input?.endX ?? "…"}, ${part.input?.endY ?? "…"}`
+    case "tool-mouseScroll":
+      return `Scroll ${part.input?.direction ?? ""}`
+    case "tool-keyboardType":
+      return `Type "${part.input?.text ?? ""}"`
+    case "tool-keyboardPress":
+      return `Press ${[...(part.input?.modifiers ?? []), part.input?.key ?? "key"].join("+")}`
+    case "tool-viewScreen":
+      return "Look at the screen"
+    case "tool-showScreen":
+      return "Show the screen"
+    default:
+      return part satisfies never
+  }
+}
+
+// the result, with shell and file text as text rather than escaped JSON
+function getToolOutput(part: ChatToolPart) {
+  if (part.state !== "output-available") {
+    return undefined
+  }
+
+  switch (part.type) {
+    case "tool-bash":
+      return (
+        <CodeBlock
+          code={`${part.output.output}
+exit code ${part.output.exitCode}`}
+          language="log"
+        />
+      )
+    case "tool-readFile":
+      return <CodeBlock code={part.output.content} language="log" />
+    case "tool-viewScreen":
+    case "tool-showScreen":
+      // never the screenshot itself: only showScreen is shown, as an image
+      return undefined
+    default:
+      return part.output
+  }
+}
+
+function ChatTool({ part }: { part: ChatToolPart }) {
+  if (part.type === "tool-showScreen" && part.state === "output-available") {
+    return (
+      <Image
+        alt="The sandbox screen"
+        base64={part.output.base64}
+        mediaType={part.output.mediaType}
+        uint8Array={new Uint8Array()}
+        className="border"
+      />
+    )
+  }
+
+  return (
+    <Tool defaultOpen={part.state === "output-error"}>
+      <ToolHeader
+        type={part.type}
+        state={part.state}
+        title={getToolTitle(part)}
+      />
+      <ToolContent>
+        {part.type === "tool-viewScreen" || part.type === "tool-showScreen" ? (
+          <p className="text-sm text-muted-foreground">
+            {part.type === "tool-viewScreen"
+              ? "A screenshot only the bot sees."
+              : "Taking a screenshot to show you."}
+          </p>
+        ) : (
+          <ToolInput input={part.input} />
+        )}
+        <ToolOutput output={getToolOutput(part)} errorText={part.errorText} />
+      </ToolContent>
+    </Tool>
+  )
+}
 
 function Chat({ chatId }: { chatId: string }) {
   const transport = useTriggerChatTransport<typeof chatAgent>({
@@ -57,7 +166,8 @@ function Chat({ chatId }: { chatId: string }) {
   return (
     <ChatConversation
       chatId={chatId}
-      initialMessages={messages}
+      // the stored transcript is untyped; its tool parts are this agent's
+      initialMessages={messages as ChatUIMessage[]}
       transport={transport}
     />
   )
@@ -69,11 +179,11 @@ function ChatConversation({
   transport,
 }: {
   chatId: string
-  initialMessages: UIMessage[]
-  transport: ChatTransport<UIMessage>
+  initialMessages: ChatUIMessage[]
+  transport: ChatTransport<ChatUIMessage>
 }) {
   const [input, setInput] = useState("")
-  const { messages, sendMessage, status, stop } = useChat({
+  const { messages, sendMessage, status, stop } = useChat<ChatUIMessage>({
     id: chatId,
     messages: initialMessages,
     transport,
@@ -97,13 +207,26 @@ function ChatConversation({
           {messages.map((message) => (
             <Message from={message.role} key={message.id}>
               <MessageContent>
-                {message.parts.map((part, index) =>
-                  part.type === "text" ? (
-                    <MessageResponse key={`${message.id}-${index}`}>
-                      {part.text}
-                    </MessageResponse>
-                  ) : null
-                )}
+                {message.parts.map((part, index) => {
+                  if (part.type === "text") {
+                    return (
+                      <MessageResponse key={`${message.id}-${index}`}>
+                        {part.text}
+                      </MessageResponse>
+                    )
+                  }
+
+                  if (part.type.startsWith("tool-")) {
+                    return (
+                      <ChatTool
+                        key={`${message.id}-${index}`}
+                        part={part as ChatToolPart}
+                      />
+                    )
+                  }
+
+                  return null
+                })}
               </MessageContent>
             </Message>
           ))}

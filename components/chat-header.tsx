@@ -1,7 +1,6 @@
-import { MonitorIcon } from "lucide-react"
-
 import { BotDialog } from "@/components/bot-dialog"
 import { ChatAvatar } from "@/components/chat-avatar"
+import { DesktopPanelToggle } from "@/components/desktop-panel"
 import { Button } from "@/components/ui/button"
 
 function ChatHeader({
@@ -26,10 +25,7 @@ function ChatHeader({
       ) : (
         <span className="truncate text-sm font-medium">{name}</span>
       )}
-      <Button variant="ghost" size="icon-sm">
-        <MonitorIcon />
-        <span className="sr-only">Desktop</span>
-      </Button>
+      <DesktopPanelToggle />
     </header>
   )
 }
