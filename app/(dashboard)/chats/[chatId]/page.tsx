@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server"
 import { notFound } from "next/navigation"
 
+import { Chat } from "@/components/chat"
 import { ChatHeader } from "@/components/chat-header"
 import { getChat } from "@/queries/chat"
 
@@ -22,11 +23,9 @@ export default async function Page({
   const bot = chat.members[0]?.bot
 
   return (
-    <div className="flex flex-1 flex-col">
+    <div className="flex h-svh flex-col">
       <ChatHeader name={chat.name ?? bot?.name ?? "Chat"} bot={bot} />
-      <div className="flex flex-1 p-6">
-        <p className="text-sm">{chatId}</p>
-      </div>
+      <Chat key={chat.id} chatId={chat.id} />
     </div>
   )
 }
