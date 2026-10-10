@@ -13,7 +13,6 @@ import {
   mintChatAccessToken,
   startChatSession,
 } from "@/actions/chat"
-
 import { CodeBlock } from "@/components/ai-elements/code-block"
 import {
   Conversation,
@@ -29,8 +28,14 @@ import {
 import {
   PromptInput,
   PromptInputFooter,
+  PromptInputSelect,
+  PromptInputSelectContent,
+  PromptInputSelectItem,
+  PromptInputSelectTrigger,
+  PromptInputSelectValue,
   PromptInputSubmit,
   PromptInputTextarea,
+  PromptInputTools,
   type PromptInputMessage,
 } from "@/components/ai-elements/prompt-input"
 import {
@@ -40,9 +45,15 @@ import {
   ToolInput,
   ToolOutput,
 } from "@/components/ai-elements/tool"
+import { ChatAvatar } from "@/components/chat-avatar"
 import { Spinner } from "@/components/ui/spinner"
+import { toast } from "@/components/ui/toast"
+import { usePaidFeatures } from "@/hooks/use-paid-features"
+import { useUsageLimits } from "@/hooks/use-usage-limits"
 import type { chatAgent } from "@/trigger/chat"
 import type { ChatUIMessage } from "@/trigger/tools"
+
+type ChatBot = { id: string; name: string; avatar: string }
 
 type ChatToolPart = Extract<
   ChatUIMessage["parts"][number],
@@ -143,7 +154,36 @@ function ChatTool({ part }: { part: ChatToolPart }) {
   )
 }
 
-function Chat({ chatId }: { chatId: string }) {
+// The face and name of the bot that wrote a reply, in a group chat. Nothing
+// for the user's messages, for direct chats, which pass no bots, or for a
+// reply whose bot has since left the chat.
+function MessageAuthor({
+  message,
+  bots,
+}: {
+  message: ChatUIMessage
+  bots: ChatBot[]
+}) {
+  const author =
+    message.role === "assistant"
+      ? bots.find((bot) => bot.id === message.metadata?.botId)
+      : undefined
+
+  if (!author) {
+    return null
+  }
+
+  return (
+    <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+      <ChatAvatar seed={author.avatar} className="size-5" />
+      {author.name}
+    </div>
+  )
+}
+
+// `bots` are the members of a group chat, for picking who answers; a direct
+// chat passes none and its one bot always does.
+function Chat({ chatId, bots }: { chatId: string; bots?: ChatBot[] }) {
   const transport = useTriggerChatTransport<typeof chatAgent>({
     task: "chat",
     accessToken: ({ chatId }) => mintChatAccessToken(chatId),
@@ -166,6 +206,7 @@ function Chat({ chatId }: { chatId: string }) {
   return (
     <ChatConversation
       chatId={chatId}
+      bots={bots}
       // the stored transcript is untyped; its tool parts are this agent's
       initialMessages={messages as ChatUIMessage[]}
       transport={transport}
@@ -175,28 +216,51 @@ function Chat({ chatId }: { chatId: string }) {
 
 function ChatConversation({
   chatId,
+  bots = [],
   initialMessages,
   transport,
 }: {
   chatId: string
+  bots?: ChatBot[]
   initialMessages: ChatUIMessage[]
   transport: ChatTransport<ChatUIMessage>
 }) {
   const [input, setInput] = useState("")
+  const [botId, setBotId] = useState(bots[0]?.id)
+  const bot = bots.find((bot) => bot.id === botId)
+  const requireFeatures = usePaidFeatures()
+  const requireUsage = useUsageLimits()
   const { messages, sendMessage, status, stop } = useChat<ChatUIMessage>({
     id: chatId,
     messages: initialMessages,
     transport,
     // pick a reply back up if the page reloaded while it was streaming
     resume: initialMessages.length > 0,
+    // the agent's own refusals, such as a limit reached mid-conversation
+    onError: (error) =>
+      toast.add({
+        type: "error",
+        title: "The bot could not reply",
+        description: error.message,
+      }),
   })
 
-  function handleSubmit(message: PromptInputMessage) {
+  async function handleSubmit(message: PromptInputMessage) {
     if (!message.text.trim()) {
       return
     }
 
-    sendMessage({ text: message.text })
+    // Talking to a bot is paid and takes AI usage. When refused, the text
+    // stays in the composer.
+    if (!requireFeatures("bots") || !(await requireUsage("ai"))) {
+      return
+    }
+
+    // in a group chat, tell the agent which bot should answer this message
+    sendMessage(
+      { text: message.text },
+      botId ? { metadata: { botId } } : undefined
+    )
     setInput("")
   }
 
@@ -206,6 +270,7 @@ function ChatConversation({
         <ConversationContent className="mx-auto w-full max-w-3xl">
           {messages.map((message) => (
             <Message from={message.role} key={message.id}>
+              <MessageAuthor message={message} bots={bots} />
               <MessageContent>
                 {message.parts.map((part, index) => {
                   if (part.type === "text") {
@@ -240,7 +305,37 @@ function ChatConversation({
             placeholder="What would you like to know?"
             onChange={(event) => setInput(event.currentTarget.value)}
           />
-          <PromptInputFooter className="justify-end">
+          <PromptInputFooter className={bot ? undefined : "justify-end"}>
+            {bot && (
+              <PromptInputTools>
+                <PromptInputSelect
+                  value={botId}
+                  onValueChange={(value) => {
+                    if (typeof value === "string") {
+                      setBotId(value)
+                    }
+                  }}
+                >
+                  <PromptInputSelectTrigger
+                    size="sm"
+                    aria-label="Bot to talk to"
+                  >
+                    <PromptInputSelectValue>
+                      <ChatAvatar seed={bot.avatar} className="size-4" />
+                      {bot.name}
+                    </PromptInputSelectValue>
+                  </PromptInputSelectTrigger>
+                  <PromptInputSelectContent>
+                    {bots.map((bot) => (
+                      <PromptInputSelectItem key={bot.id} value={bot.id}>
+                        <ChatAvatar seed={bot.avatar} className="size-4" />
+                        {bot.name}
+                      </PromptInputSelectItem>
+                    ))}
+                  </PromptInputSelectContent>
+                </PromptInputSelect>
+              </PromptInputTools>
+            )}
             <PromptInputSubmit
               status={status}
               onStop={stop}

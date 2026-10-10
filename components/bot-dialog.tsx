@@ -44,6 +44,8 @@ import { Input } from "@/components/ui/input"
 import { Spinner } from "@/components/ui/spinner"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/components/ui/toast"
+import { usePaidFeatures } from "@/hooks/use-paid-features"
+import { useUsageLimits } from "@/hooks/use-usage-limits"
 import { botInsertSchema, type bots, type BotInsert } from "@/db/schema"
 
 type EditableBot = Pick<
@@ -315,9 +317,24 @@ function BotDialog({
   onOpenChange?: (open: boolean) => void
 }) {
   const [internalOpen, setInternalOpen] = useState(false)
+  const requireFeatures = usePaidFeatures()
+  const requireUsage = useUsageLimits()
   const controlled = openProp !== undefined
   const open = controlled ? openProp : internalOpen
-  const setOpen = (open: boolean) => {
+  const setOpen = async (open: boolean) => {
+    // Creating a bot is paid, and comes with a new, running sandbox. Editing
+    // one is free.
+    if (
+      open &&
+      !bot &&
+      !(
+        requireFeatures("bots", "sandboxes") &&
+        (await requireUsage("bots", "sandbox"))
+      )
+    ) {
+      return
+    }
+
     if (!controlled) {
       setInternalOpen(open)
     }

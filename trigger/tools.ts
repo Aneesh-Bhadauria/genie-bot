@@ -1,6 +1,5 @@
 import type { Sandbox } from "@daytona/sdk"
-import type { InferChatUIMessageFromTools } from "@trigger.dev/sdk/ai"
-import { tool } from "ai"
+import { tool, type InferUITools, type UIDataTypes, type UIMessage } from "ai"
 import { z } from "zod"
 
 import { daytona } from "@/lib/daytona"
@@ -289,4 +288,9 @@ export function createTools(getSandboxId: () => Promise<string | null>) {
 }
 
 export type ChatTools = ReturnType<typeof createTools>
-export type ChatUIMessage = InferChatUIMessageFromTools<ChatTools>
+// `botId` is the bot that wrote an assistant message
+export type ChatUIMessage = UIMessage<
+  { botId?: string } | undefined,
+  UIDataTypes,
+  InferUITools<ChatTools>
+>

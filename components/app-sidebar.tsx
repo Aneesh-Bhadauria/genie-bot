@@ -1,4 +1,3 @@
-import { UserButton } from "@clerk/nextjs"
 import { formatDistanceToNowStrict } from "date-fns"
 
 import { ChatList } from "@/components/chat-list"
@@ -16,17 +15,21 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar"
-import { getChats } from "@/queries/bot"
+import { UserMenu } from "@/components/user-menu"
+import { getBots, getChats } from "@/queries/bot"
 
 async function AppSidebar() {
-  const chats = (await getChats()).map((chat) => {
-    // group chats fall back to their first bot for now
-    const bot = chat.members[0]?.bot
+  const [bots, allChats] = await Promise.all([getBots(), getChats()])
+  const chats = allChats.map((chat) => {
+    const members = chat.members.map((member) => member.bot)
 
     return {
       id: chat.id,
-      name: chat.name ?? bot?.name ?? "Chat",
-      avatar: bot?.avatar ?? chat.id,
+      // direct chats have no name of their own and use their bot's
+      name: chat.name ?? members[0]?.name ?? "Chat",
+      // a group whose bots were all deleted still needs a face
+      avatars:
+        members.length > 0 ? members.map((bot) => bot.avatar) : [chat.id],
       preview: chat.lastMessagePreview ?? "No messages yet",
       // formatted here, on the server, so it cannot differ on hydration
       time: formatDistanceToNowStrict(chat.lastMessageAt),
@@ -37,10 +40,10 @@ async function AppSidebar() {
     <Sidebar collapsible="icon">
       <SidebarHeader>
         <div className="flex justify-end group-data-[collapsible=icon]:justify-center">
-          <CreateMenu />
+          <CreateMenu bots={bots} />
         </div>
         <ChatSearch
-          chats={chats.map(({ id, name, avatar }) => ({ id, name, avatar }))}
+          chats={chats.map(({ id, name, avatars }) => ({ id, name, avatars }))}
         />
       </SidebarHeader>
       <SidebarContent>
@@ -53,28 +56,12 @@ async function AppSidebar() {
       <SidebarFooter>
         <SidebarMenu>
           <SidebarMenuItem>
-            {/* UserButton brings its own <button>, so the menu button is a div */}
+            {/* Clerk's user button brings its own <button>, so this one is a div */}
             <SidebarMenuButton
               render={<div />}
               className="cursor-pointer p-0 group-data-[collapsible=icon]:p-0! hover:shadow-sm"
             >
-              <UserButton
-                showName
-                appearance={{
-                  // `!` so these win over Clerk's own component styles
-                  elements: {
-                    rootBox: "size-full!",
-                    // fills the menu button, so all of it is clickable
-                    userButtonTrigger:
-                      "size-full! cursor-pointer! justify-start! rounded-md! p-2! focus:shadow-none! focus-visible:ring-2! focus-visible:ring-sidebar-ring! group-data-[collapsible=icon]:justify-center! group-data-[collapsible=icon]:p-0!",
-                    userButtonBox: "min-w-0 flex-row! gap-2!",
-                    // Clerk renders the name before the avatar
-                    userButtonAvatarBox: "order-1! size-5!",
-                    userButtonOuterIdentifier:
-                      "order-2! truncate p-0! text-sm! font-normal! text-sidebar-foreground! group-data-[collapsible=icon]:hidden!",
-                  },
-                }}
-              />
+              <UserMenu />
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

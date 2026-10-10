@@ -1,6 +1,7 @@
 import { relations } from "drizzle-orm"
 import {
   index,
+  integer,
   pgEnum,
   pgTable,
   primaryKey,
@@ -9,7 +10,7 @@ import {
 } from "drizzle-orm/pg-core"
 import { createInsertSchema } from "drizzle-zod"
 import { nanoid } from "nanoid"
-import type { z } from "zod"
+import { z } from "zod"
 
 export const bots = pgTable(
   "bots",
@@ -80,6 +81,39 @@ export const chatMembers = pgTable(
   ]
 )
 
+export const usageKind = pgEnum("usage_kind", ["ai", "sandbox"])
+
+// What each user has consumed of their plan. Append-only: rows are never
+// changed or removed, and the usage of a billing period is the sum of the
+// rows created within it (see lib/usage.ts).
+export const usageLedger = pgTable(
+  "usage_ledger",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => nanoid()),
+    // Clerk user id
+    userId: text("user_id").notNull(),
+    kind: usageKind("kind").notNull(),
+    // ai: micro-dollars of model cost for one turn
+    // sandbox: seconds one sandbox was running
+    amount: integer("amount").notNull(),
+    // What the usage was for. Not foreign keys: the entry has to outlive the
+    // bot or chat it was for.
+    botId: text("bot_id"),
+    chatId: text("chat_id"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("usage_ledger_user_id_created_at_idx").on(
+      table.userId,
+      table.createdAt
+    ),
+  ]
+)
+
 export const botsRelations = relations(bots, ({ many }) => ({
   memberships: many(chatMembers),
 }))
@@ -116,3 +150,27 @@ export const botInsertSchema = createInsertSchema(bots, {
 }).omit({ id: true, userId: true, sandboxId: true, createdAt: true })
 
 export type BotInsert = z.infer<typeof botInsertSchema>
+
+// A group chat is a chat plus the bots in it, so the form adds `botIds` to
+// the chat's own columns. `name` is nullable for direct chats but a group
+// has to have one, hence the full schema instead of a refinement.
+export const groupChatInsertSchema = createInsertSchema(chats, {
+  name: z
+    .string()
+    .trim()
+    .min(1, "Give the group a name.")
+    .max(40, "Keep the name under 40 characters."),
+})
+  .omit({
+    id: true,
+    userId: true,
+    kind: true,
+    lastMessagePreview: true,
+    lastMessageAt: true,
+    createdAt: true,
+  })
+  .extend({
+    botIds: z.array(z.string()).min(2, "Pick at least two bots."),
+  })
+
+export type GroupChatInsert = z.infer<typeof groupChatInsertSchema>

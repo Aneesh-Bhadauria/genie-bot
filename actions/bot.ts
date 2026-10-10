@@ -13,14 +13,21 @@ import {
   chats,
   type BotInsert,
 } from "@/db/schema"
+import { assertFeatures } from "@/lib/billing"
 import { daytona } from "@/lib/daytona"
+import { assertUsage } from "@/lib/usage"
 
 export async function createBot(input: BotInsert) {
-  const { isAuthenticated, userId } = await auth()
+  const { isAuthenticated, userId, has } = await auth()
 
   if (!isAuthenticated) {
     throw new Error("You must be signed in to create a bot.")
   }
+
+  // a new bot comes with a new sandbox, so it takes both
+  assertFeatures(has, "bots", "sandboxes")
+  // and it starts out running, so it needs room for both
+  await assertUsage(userId, "bots", "sandbox")
 
   const values = botInsertSchema.parse(input)
 

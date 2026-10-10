@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { useParams } from "next/navigation"
 
-import { ChatAvatar } from "@/components/chat-avatar"
+import { GroupChatAvatar } from "@/components/group-chat-avatar"
 import {
   SidebarMenu,
   SidebarMenuButton,
@@ -16,7 +16,7 @@ function ChatList({
   chats: {
     id: string
     name: string
-    avatar: string
+    avatars: string[]
     preview: string
     time: string
   }[]
@@ -35,7 +35,7 @@ function ChatList({
             className="group-data-[collapsible=icon]:justify-center"
             render={<Link href={`/chats/${chat.id}`} />}
           >
-            <ChatAvatar seed={chat.avatar} className="size-6" />
+            <GroupChatAvatar seeds={chat.avatars} className="size-6" />
             <div className="flex min-w-0 flex-1 flex-col group-data-[collapsible=icon]:hidden">
               <div className="flex items-baseline justify-between gap-2">
                 <span className="truncate font-medium">{chat.name}</span>
