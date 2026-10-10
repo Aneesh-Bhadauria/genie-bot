@@ -6,7 +6,7 @@ import { PlusIcon, ShuffleIcon } from "lucide-react"
 import { nanoid } from "nanoid"
 import { Controller, useForm } from "react-hook-form"
 
-import { createBot } from "@/actions/bot"
+import { createBot, updateBot } from "@/actions/bot"
 import { ChatAvatar } from "@/components/chat-avatar"
 import { Button } from "@/components/ui/button"
 import {
@@ -32,7 +32,12 @@ import { Input } from "@/components/ui/input"
 import { Spinner } from "@/components/ui/spinner"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/components/ui/toast"
-import { botInsertSchema, type BotInsert } from "@/db/schema"
+import { botInsertSchema, type bots, type BotInsert } from "@/db/schema"
+
+type EditableBot = Pick<
+  typeof bots.$inferSelect,
+  "id" | "name" | "avatar" | "job" | "instructions"
+>
 
 const presets = [
   {
@@ -57,32 +62,41 @@ const presets = [
   },
 ]
 
-function BotForm({ onCreated }: { onCreated: () => void }) {
-  const [seed] = useState(() => nanoid())
+function BotForm({ bot, onSaved }: { bot?: EditableBot; onSaved: () => void }) {
+  const [seed] = useState(() => bot?.avatar ?? nanoid())
   const form = useForm<BotInsert>({
     resolver: zodResolver(botInsertSchema),
     defaultValues: {
-      name: "",
+      name: bot?.name ?? "",
       avatar: seed,
-      job: "",
-      instructions: "",
+      job: bot?.job ?? "",
+      instructions: bot?.instructions ?? "",
     },
   })
   const { isSubmitting } = form.formState
 
   async function onSubmit(values: BotInsert) {
     try {
-      const bot = await createBot(values)
-      toast.add({
-        type: "success",
-        title: "Bot created",
-        description: `${bot.name} is ready to chat.`,
-      })
-      onCreated()
+      if (bot) {
+        const saved = await updateBot(bot.id, values)
+        toast.add({
+          type: "success",
+          title: "Bot updated",
+          description: `Your changes to ${saved.name} are saved.`,
+        })
+      } else {
+        const saved = await createBot(values)
+        toast.add({
+          type: "success",
+          title: "Bot created",
+          description: `${saved.name} is ready to chat.`,
+        })
+      }
+      onSaved()
     } catch {
       toast.add({
         type: "error",
-        title: "Could not create the bot",
+        title: bot ? "Could not update the bot" : "Could not create the bot",
         description: "Something went wrong. Please try again.",
       })
     }
@@ -202,30 +216,60 @@ function BotForm({ onCreated }: { onCreated: () => void }) {
         </DialogClose>
         <Button type="submit" disabled={isSubmitting}>
           {isSubmitting && <Spinner data-icon="inline-start" />}
-          Create bot
+          {bot ? "Save changes" : "Create bot"}
         </Button>
       </DialogFooter>
     </form>
   )
 }
 
-function BotDialog() {
-  const [open, setOpen] = useState(false)
+// Creates a bot, or edits the one passed as `bot`.
+//
+// Pass `open` and `onOpenChange` to drive the dialog from elsewhere, such as
+// a menu item; it then renders without its own trigger. Otherwise `trigger`
+// replaces the default "Create a new bot" button.
+function BotDialog({
+  bot,
+  trigger,
+  open: openProp,
+  onOpenChange,
+}: {
+  bot?: EditableBot
+  trigger?: React.ReactElement
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+}) {
+  const [internalOpen, setInternalOpen] = useState(false)
+  const controlled = openProp !== undefined
+  const open = controlled ? openProp : internalOpen
+  const setOpen = (open: boolean) => {
+    if (!controlled) {
+      setInternalOpen(open)
+    }
+    onOpenChange?.(open)
+  }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant="secondary" />}>
-        <PlusIcon data-icon="inline-start" />
-        Create a new bot
-      </DialogTrigger>
+      {!controlled &&
+        (trigger ? (
+          <DialogTrigger render={trigger} />
+        ) : (
+          <DialogTrigger render={<Button variant="secondary" />}>
+            <PlusIcon data-icon="inline-start" />
+            Create a new bot
+          </DialogTrigger>
+        ))}
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>New bot</DialogTitle>
+          <DialogTitle>{bot ? "Edit bot" : "New bot"}</DialogTitle>
           <DialogDescription>
-            Give it a face, a name, and a job to do.
+            {bot
+              ? "Change its face, its name, or the job it does."
+              : "Give it a face, a name, and a job to do."}
           </DialogDescription>
         </DialogHeader>
-        <BotForm onCreated={() => setOpen(false)} />
+        <BotForm bot={bot} onSaved={() => setOpen(false)} />
       </DialogContent>
     </Dialog>
   )

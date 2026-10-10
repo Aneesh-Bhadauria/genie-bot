@@ -16,7 +16,7 @@ export default async function Page() {
   await auth.protect()
 
   return (
-    <div className="flex min-h-[calc(100svh-3.5rem)]">
+    <div className="flex flex-1">
       <Empty>
         <EmptyHeader>
           <EmptyMedia>
